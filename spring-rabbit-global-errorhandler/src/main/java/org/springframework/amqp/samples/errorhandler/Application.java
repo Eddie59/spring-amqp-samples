@@ -36,12 +36,9 @@ public class Application {
 	@Autowired
 	private RabbitTemplate template;
 
-	private void runDemo() throws Exception {
-		this.template.convertAndSend(TEST_QUEUE, new Foo("bar"));
-		this.template.convertAndSend(TEST_QUEUE, new Foo("bar"), m -> {
-			return new Message("some bad json".getBytes(), m.getMessageProperties());
-		});
-		Thread.sleep(5000);
+	@Bean
+	public Queue queue() {
+		return new Queue(TEST_QUEUE, false, false, true);
 	}
 
 	@RabbitListener(queues = TEST_QUEUE)
@@ -51,7 +48,7 @@ public class Application {
 
 	@Bean
 	public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(ConnectionFactory connectionFactory,
-			SimpleRabbitListenerContainerFactoryConfigurer configurer) {
+																			   SimpleRabbitListenerContainerFactoryConfigurer configurer) {
 		SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
 		configurer.configure(factory, connectionFactory);
 		factory.setErrorHandler(errorHandler());
@@ -63,14 +60,18 @@ public class Application {
 		return new ConditionalRejectingErrorHandler(new MyFatalExceptionStrategy());
 	}
 
-	@Bean
-	public Queue queue() {
-		return new Queue(TEST_QUEUE, false, false, true);
-	}
 
 	@Bean
 	public MessageConverter jsonConverter() {
 		return new Jackson2JsonMessageConverter();
+	}
+
+	private void runDemo() throws Exception {
+		this.template.convertAndSend(TEST_QUEUE, new Foo("bar"));
+		this.template.convertAndSend(TEST_QUEUE, new Foo("bar"), m -> {
+			return new Message("some bad json".getBytes(), m.getMessageProperties());
+		});
+		Thread.sleep(5000);
 	}
 
 	public static class MyFatalExceptionStrategy extends ConditionalRejectingErrorHandler.DefaultExceptionStrategy {

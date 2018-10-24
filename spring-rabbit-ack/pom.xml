@@ -3,13 +3,13 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>org.springframework.amqp.samples</groupId>
-	<artifactId>spring-rabbit-confirms-returns</artifactId>
-	<version>2.1.0.RELEASE</version>
+	<groupId>com.amqp</groupId>
+	<artifactId>ack</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
-	<name>spring-rabbit-confirms-returns</name>
-	<description>Demonstrates Configuration for Confirms and Returns</description>
+	<name>ack</name>
+	<description>Demo project for Spring Boot</description>
 
 	<parent>
 		<groupId>org.springframework.boot</groupId>
@@ -35,6 +35,8 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+
 	</dependencies>
 
 	<build>

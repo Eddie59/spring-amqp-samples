@@ -33,105 +33,117 @@ import org.springframework.context.annotation.Bean;
 @SpringBootApplication
 public class SpringRabbitConfirmsReturnsApplication {
 
-	private static final String QUEUE = "spring.publisher.sample";
+    private final CountDownLatch listenLatch = new CountDownLatch(1);
+    private final CountDownLatch confirmLatch = new CountDownLatch(1);
+    private final CountDownLatch returnLatch = new CountDownLatch(1);
 
-	public static void main(String[] args) throws Exception {
-		ConfigurableApplicationContext context = SpringApplication.run(SpringRabbitConfirmsReturnsApplication.class,
-				args);
-		context.getBean(SpringRabbitConfirmsReturnsApplication.class).runDemo();
-		context.close();
-	}
+    private static final String QUEUE = "spring.publisher.sample";
 
-	@Autowired
-	private RabbitTemplate rabbitTemplate;
+    public static void main(String[] args) throws Exception {
+        ConfigurableApplicationContext context = SpringApplication.run(SpringRabbitConfirmsReturnsApplication.class,
+                args);
+        context.getBean(SpringRabbitConfirmsReturnsApplication.class).runDemo();
+        context.close();
+    }
 
-	private final CountDownLatch listenLatch = new CountDownLatch(1);
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
-	private final CountDownLatch confirmLatch = new CountDownLatch(1);
+    @Bean
+    public Queue queue() {
+        return new Queue(QUEUE, false, false, true);
+    }
 
-	private final CountDownLatch returnLatch = new CountDownLatch(1);
-
-	private void runDemo() throws Exception {
-		setupCallbacks();
-		// send a message to the default exchange to be routed to the queue
-		this.rabbitTemplate.convertAndSend("", QUEUE, "foo", new CorrelationData("Correlation for message 1"));
-		if (this.confirmLatch.await(10, TimeUnit.SECONDS)) {
-			System.out.println("Confirm received");
-		}
-		else {
-			System.out.println("Confirm NOT received");
-		}
-		if (this.listenLatch.await(10, TimeUnit.SECONDS)) {
-			System.out.println("Message received by listener");
-		}
-		else {
-			System.out.println("Message NOT received by listener");
-		}
-		// send a message to the default exchange to be routed to a non-existent queue
-		this.rabbitTemplate.convertAndSend("", QUEUE + QUEUE, "bar", message -> {
-			System.out.println("Message after conversion: " + message);
-			return message;
-		});
-		if (this.returnLatch.await(10, TimeUnit.SECONDS)) {
-			System.out.println("Return received");
-		}
-		else {
-			System.out.println("Return NOT received");
-		}
-	}
-
-	private void setupCallbacks() {
-		/*
-		 * Confirms/returns enabled in application.properties - add the callbacks here.
-		 */
-		this.rabbitTemplate.setConfirmCallback((correlation, ack, reason) -> {
-			if (correlation != null) {
-				System.out.println("Received " + (ack ? " ack " : " nack ") + "for correlation: " + correlation);
-			}
-			this.confirmLatch.countDown();
-		});
-		this.rabbitTemplate.setReturnCallback((message, replyCode, replyText, exchange, routingKey) -> {
-			System.out.println("Returned: " + message + "\nreplyCode: " + replyCode
-					+ "\nreplyText: " + replyText + "\nexchange/rk: " + exchange + "/" + routingKey);
-			this.returnLatch.countDown();
-		});
-		/*
-		 * Replace the correlation data with one containing the converted message in case
-		 * we want to resend it after a nack.
-		 */
-		this.rabbitTemplate.setCorrelationDataPostProcessor((message, correlationData) ->
-				new CompleteMessageCorrelationData(correlationData != null ? correlationData.getId() : null, message));
-	}
-
-	@Bean
-	public Queue queue() {
-		return new Queue(QUEUE, false, false, true);
-	}
-
-	@RabbitListener(queues = QUEUE)
+/*
+    @RabbitListener(queues = QUEUE)
 	public void listen(String in) {
 		System.out.println("Listener received: " + in);
 		this.listenLatch.countDown();
 	}
+*/
 
-	static class CompleteMessageCorrelationData extends CorrelationData {
+    private void runDemo() throws Exception {
+        setupCallbacks();
 
-		private final Message message;
+        this.rabbitTemplate.convertAndSend("",QUEUE,"abcdefg");
+        //发送消息到默认的Exchange，消息的key为spring.publisher.sample
+        // send()方法重载了一个CorrelationData对象的版本，当发布确认被启用时，这个对象将被传输到先前描述的回调函数中，这使得发送者对发送的消息进行确认。
+        this.rabbitTemplate.convertAndSend("", QUEUE, "foo", new CorrelationData("消息1的相关性的内容"));
 
-		CompleteMessageCorrelationData(String id, Message message) {
-			super(id);
-			this.message = message;
-		}
+        if (this.confirmLatch.await(5, TimeUnit.SECONDS)) {
+            System.out.println("确认到达Exchange");
+        } else {
+            System.out.println("没有确认到达Exchange");
+        }
 
-		public Message getMessage() {
-			return this.message;
-		}
+        if (this.listenLatch.await(5, TimeUnit.SECONDS)) {
+            System.out.println("消费者已接收");
+        } else {
+            System.out.println("消费者没有接收");
+        }
 
-		@Override
-		public String toString() {
-			return "CompleteMessageCorrelationData [id=" + getId() + ", message=" + this.message + "]";
-		}
+        //接收信息经过转换后的信息，信息还没有发送到Exchange之前，比如，把java对象转化为json以后，发送到Exchange之前，想知道转换后的结果
+        this.rabbitTemplate.convertAndSend("", QUEUE + QUEUE, "bar", message -> {
+            System.out.println("Message after conversion: " + message);
+            return message;
+        });
 
-	}
+        if (this.returnLatch.await(5, TimeUnit.SECONDS)) {
+            System.out.println("Return received");
+        } else {
+            System.out.println("Return NOT received");
+        }
+    }
+
+    private void setupCallbacks() {
+
+        //发送端成功发送到exchange，会回调这个方法
+        this.rabbitTemplate.setConfirmCallback((correlation, ack, reason) -> {
+            if (correlation != null) {
+                System.out.println("Received " + (ack ? " ack " : " nack ") + "for correlation: " + correlation);
+            }
+            this.confirmLatch.countDown();
+        });
+
+        //发送的消息，要发送的Exchange是存在的，但是Exchange没有对应的queue，才会触发PublisherReturns
+        this.rabbitTemplate.setReturnCallback((message, replyCode, replyText, exchange, routingKey) -> {
+            System.out.println("Returned: " + message + "\nreplyCode: " + replyCode + "\nreplyText: " + replyText + "\nexchange/rk: " + exchange + "/" + routingKey);
+            this.returnLatch.countDown();
+        });
+
+		/*
+		 * Replace the correlation data with one containing the converted message in case
+		 * we want to resend it after a nack.
+		 * 使用另一个对象来替换correlationData对象，这个功能是什么？???不清楚这个机制有什么用？？？
+		 */
+        this.rabbitTemplate.setCorrelationDataPostProcessor((message, correlationData) -> {
+            String correlationData_id = correlationData != null ? correlationData.getId() : null;
+            System.out.println("correlationData_id:"+correlationData_id);
+            return new CompleteMessageCorrelationData(correlationData_id, message);
+        });
+
+
+    }
+
+
+    static class CompleteMessageCorrelationData extends CorrelationData {
+
+        private final Message message;
+
+        CompleteMessageCorrelationData(String id, Message message) {
+            super(id);
+            this.message = message;
+        }
+
+        public Message getMessage() {
+            return this.message;
+        }
+
+        @Override
+        public String toString() {
+            return "CompleteMessageCorrelationData [id=" + getId() + ", message=" + this.message + "]";
+        }
+
+    }
 
 }
